@@ -1,4 +1,4 @@
-import os, json, time, time as _t, random, string, asyncio, sqlite3
+import os, shutil, json, time, time as _t, random, string, asyncio, sqlite3
 import discord
 from discord.ext import commands, tasks
 import psutil
@@ -16,6 +16,8 @@ DEFAULT_PORT_QUOTA = int(os.getenv("PORT_QUOTA", "5"))
 THRESHOLD = int(os.getenv("ALERT_THRESHOLD", "90"))
 RED = 0xD00000
 START = _t.time()
+os.environ["PATH"] = os.environ.get("PATH", "") + ":/snap/bin:/usr/local/bin:/usr/bin"
+LXC = shutil.which("lxc") or next((p for p in ("/snap/bin/lxc", "/usr/bin/lxc", "/usr/local/bin/lxc") if os.path.exists(p)), None)
 
 db = sqlite3.connect("data.db")
 db.row_factory = sqlite3.Row
@@ -61,7 +63,15 @@ def main_admin_only():
     return commands.check(p)
 
 async def run(*cmd, timeout=300):
-    p = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+    cmd = list(cmd)
+    if cmd[0] == "lxc":
+        if not LXC:
+            return 127, "lxc is not installed on this host. Run: snap install lxd && lxd init --auto, then restart the bot."
+        cmd[0] = LXC
+    try:
+        p = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+    except Exception as ex:
+        return 127, f"could not run command: {ex}"
     try:
         out, _ = await asyncio.wait_for(p.communicate(), timeout)
     except asyncio.TimeoutError:
